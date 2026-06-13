@@ -1,20 +1,38 @@
-name: Download Tor Browser
-
+name: Download Tor Browser v2
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Download Tor Browser
+      - name: Download Tor Browser from multiple mirrors
         run: |
-          URL="https://dist.torproject.org/torbrowser/14.5/tor-browser-windows-x86_64-portable-14.5.exe"
-          echo "Downloading $URL ..."
-          curl -L -o tor-browser-windows-x86_64-portable-14.5.exe "$URL" --connect-timeout 30 --max-time 600
-          ls -lh tor-browser-windows-x86_64-portable-14.5.exe
+          set -e
+          FILENAME="tor-browser-windows-x86_64-portable-14.5.exe"
+          URLS=(
+            "https://dist.torproject.org/torbrowser/14.5/$FILENAME"
+            "https://archive.torproject.org/tor-package-archive/torbrowser/14.5/$FILENAME"
+            "https://www.torproject.org/dist/torbrowser/14.5/$FILENAME"
+            "https://tor.calyxinstitute.org/dist/torbrowser/14.5/$FILENAME"
+            "https://ftp.icm.edu.pl/pub/security/tor/dist/torbrowser/14.5/$FILENAME"
+          )
+          for URL in "${URLS[@]}"; do
+            echo "Trying: $URL"
+            HTTP_CODE=$(curl -L -o "$FILENAME" -w '%{http_code}' --connect-timeout 15 --max-time 600 "$URL" 2>/dev/null || echo "000")
+            SIZE=$(stat -c%s "$FILENAME" 2>/dev/null || echo "0")
+            echo "  HTTP: $HTTP_CODE  Size: $SIZE"
+            if [ "$SIZE" -gt 50000000 ]; then
+              echo "SUCCESS! Downloaded $SIZE bytes"
+              ls -lh "$FILENAME"
+              break
+            fi
+            rm -f "$FILENAME"
+          done
+          if [ ! -f "$FILENAME" ]; then
+            echo "All mirrors failed!"
+            exit 1
+          fi
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
