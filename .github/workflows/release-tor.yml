@@ -1,0 +1,36 @@
+name: Tor Browser Release
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Tor Browser
+        run: |
+          URLS=(
+            "https://dist.torproject.org/torbrowser/14.5/tor-browser-windows-x86_64-portable-14.5.exe"
+            "https://archive.torproject.org/tor-package-archive/torbrowser/14.5/tor-browser-windows-x86_64-portable-14.5.exe"
+            "https://tor.calyxinstitute.org/dist/torbrowser/14.5/tor-browser-windows-x86_64-portable-14.5.exe"
+          )
+          for URL in "${URLS[@]}"; do
+            echo "Trying: $URL"
+            curl -L -o tor.exe -w '%{http_code}' --connect-timeout 30 --max-time 600 "$URL" 2>/dev/null
+            SIZE=$(stat -c%s tor.exe 2>/dev/null || echo "0")
+            echo "Size: $SIZE"
+            if [ "$SIZE" -gt 50000000 ]; then echo "SUCCESS"; break; fi
+            rm -f tor.exe
+          done
+          if [ ! -f tor.exe ]; then exit 1; fi
+          mkdir -p release
+          mv tor.exe release/
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Tor Browser 14.5"
+          tag_name: "tor-14.5"
+          files: release/tor.exe
+          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
