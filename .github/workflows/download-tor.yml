@@ -1,0 +1,24 @@
+name: Download Tor Browser
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Tor Browser
+        run: |
+          URL="https://dist.torproject.org/torbrowser/14.5/tor-browser-windows-x86_64-portable-14.5.exe"
+          echo "Downloading $URL ..."
+          curl -L -o tor-browser-windows-x86_64-portable-14.5.exe "$URL" --connect-timeout 30 --max-time 600
+          ls -lh tor-browser-windows-x86_64-portable-14.5.exe
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tor-browser
+          path: tor-browser-windows-x86_64-portable-14.5.exe
+          retention-days: 7
