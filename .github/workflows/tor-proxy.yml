@@ -2,6 +2,9 @@ name: Tor Proxy Tunnel
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/tor-proxy.yml
 
 jobs:
   proxy:
@@ -38,5 +41,5 @@ CFG
           cat lt_url.txt
           echo "=== END ==="
 
-      - name: Keep alive
+      - name: Keep alive (6 hours)
         run: sleep 21600
