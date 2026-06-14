@@ -1,9 +1,6 @@
 name: Tor Proxy Tunnel
 
 on:
-  push:
-    paths:
-      - .github/workflows/tor-proxy.yml
   workflow_dispatch:
 
 jobs:
@@ -11,28 +8,85 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Install 3proxy
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq 3proxy
-
-      - name: Start SOCKS5 proxy
+      - name: Start SOCKS5 proxy via Python
         run: |
-          sudo bash -c 'echo "nserver 8.8.8.8
-nscache 65536
-timeouts 1 5 30 60 180 1800 15 60
-daemon
-auth none
-socks -p1080
-allow *" > /etc/3proxy.cfg'
-          sudo 3proxy /etc/3proxy.cfg
-          echo "SOCKS5 started"
+          pip install pysocks
+          cat > proxy.py << 'PYEOF'
+import socket, threading, select
 
-      - name: Expose via serveo
+def handle_client(client_sock):
+    try:
+        data = client_sock.recv(4096)
+        if data[0] != 5:
+            client_sock.close()
+            return
+        client_sock.send(b'\x05\x00')
+        data = client_sock.recv(4096)
+        if data[1] != 1:
+            client_sock.close()
+            return
+        addr_type = data[3]
+        if addr_type == 1:
+            host = socket.inet_ntoa(data[4:8])
+            port = int.from_bytes(data[8:10], 'big')
+        elif addr_type == 3:
+            host_len = data[4]
+            host = data[5:5+host_len].decode()
+            port = int.from_bytes(data[5+host_len:7+host_len], 'big')
+        else:
+            client_sock.close()
+            return
+        remote = socket.socket()
+        remote.settimeout(30)
+        remote.connect((host, port))
+        client_sock.send(b'\x05\x00\x00\x01' + b'\x00\x00\x00\x00' + b'\x00\x00')
+        sockets = [client_sock, remote]
+        while True:
+            r, _, _ = select.select(sockets, [], [], 60)
+            for s in r:
+                d = s.recv(65536)
+                if not d:
+                    for x in sockets:
+                        x.close()
+                    return
+                other = remote if s == client_sock else client_sock
+                other.send(d)
+    except:
+        pass
+    finally:
+        try:
+            client_sock.close()
+        except:
+            pass
+
+server = socket.socket()
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(('0.0.0.0', 1080))
+server.listen(50)
+print('SOCKS5 proxy listening on port 1080')
+while True:
+    client, addr = server.accept()
+    threading.Thread(target=handle_client, args=(client,), daemon=True).start()
+PYEOF
+          python3 proxy.py &
+          sleep 3
+          echo "Proxy started"
+
+      - name: Create public tunnel with bore
         run: |
-          sudo apt-get install -y -qq sshpass
-          ssh -o StrictHostKeyChecking=no -R 80:localhost:1080 serveo.net 2>&1 | head -5 &
-          sleep 5
-          curl -s https://serveo.net 2>&1 || true
-          echo "Tunnel attempt done"
+          # 安装bore — 轻量级隧道工具不需要认证
+          curl -sL https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz -o bore.tar.gz
+          tar xzf bore.tar.gz
+          ./bore local 1080 --to bore.pub 2>&1 | while read line; do
+            echo "$line"
+            echo "$line" >> tunnel_url.txt
+          done &
+          sleep 8
+          echo "=== TUNNEL URL ==="
+          cat tunnel_url.txt 2>/dev/null || echo "Waiting for tunnel..."
+          echo "=== END ==="
 
       - name: Keep alive
-        run: sleep 21600
+        run: |
+          echo "Tunnel running. Keeping alive for 6 hours..."
+          sleep 21600
