@@ -1,0 +1,42 @@
+name: Tor Proxy Tunnel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Install 3proxy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq 3proxy
+
+      - name: Start SOCKS5 proxy
+        run: |
+          cat > 3proxy.cfg << 'CFG'
+nserver 8.8.8.8
+nscache 65536
+timeouts 1 5 30 60 180 1800 15 60
+daemon
+log /tmp/3proxy.log D
+rotate 1
+auth none
+socks -p1080
+allow *
+CFG
+          sudo 3proxy 3proxy.cfg
+          echo "SOCKS5 proxy started on port 1080"
+
+      - name: Expose via localtunnel
+        run: |
+          npm install -g localtunnel
+          nohup lt --port 1080 > lt_url.txt 2>&1 &
+          sleep 10
+          echo "=== TUNNEL URL ==="
+          cat lt_url.txt
+          echo "=== END ==="
+
+      - name: Keep alive
+        run: sleep 21600
